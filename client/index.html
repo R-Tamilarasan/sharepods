@@ -1,21 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SharePods - Audio Only</title>
+    <title>SharePods Audio Room</title>
 </head>
 <body>
 
 <h1>SharePods Audio Room</h1>
 
 <input id="room" placeholder="Room ID">
-<button onclick="joinRoom()">Join Room</button>
 <button onclick="shareAudio()">Share Tab Audio (D1 only)</button>
 
-<div id="status" style="margin-top: 10px; color: green;"></div>
+<!-- Status display -->
+<div id="status" style="margin-top: 10px; font-weight: bold; color: green;"></div>
+
+<!-- Connected users -->
 <h3>Connected Users:</h3>
 <div id="users" style="margin-top: 5px; color: blue;"></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="script.js"></script>
+
 </body>
 </html>
