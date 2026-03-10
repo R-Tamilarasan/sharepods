@@ -1,24 +1,129 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>SharePods Audio Room</title>
+    <style>
+        /* Reset some default styles */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to right, #4facfe, #00f2fe);
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 30px 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            width: 350px;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 25px;
+            color: #333;
+            font-size: 1.8em;
+        }
+
+        input#room {
+            width: 80%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+            outline: none;
+        }
+
+        input#room:focus {
+            border-color: #4facfe;
+            box-shadow: 0 0 5px rgba(79, 172, 254, 0.5);
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 1em;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            color: white;
+        }
+
+        button#joinBtn {
+            background-color: #4facfe;
+        }
+
+        button#joinBtn:hover {
+            background-color: #00f2fe;
+        }
+
+        button#shareBtn {
+            background-color:#4facfe;
+        }
+
+        button#shareBtn:hover {
+            background-color:#00f2fe;
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        h3 {
+            margin-top: 25px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        #users {
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 10px;
+            color: #555;
+            text-align: left;
+        }
+
+        #users div {
+            padding: 5px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            background-color: #f1f1f1;
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <h1>SharePod Audio Room</h1>
 
-<h1>SharePods Audio Room</h1>
+        <!-- Room input -->
+        <input id="room" placeholder="Enter Room ID">
 
-<input id="room" placeholder="Room ID">
-<button onclick="shareAudio()">Share Tab Audio (D1 only)</button>
+        <!-- Buttons -->
+        <div>
+            <button id="joinBtn" onclick="joinRoom()">Join Room</button>
+            <button id="shareBtn" onclick="shareAudio()">Share Device Audio</button>
+        </div>
 
-<!-- Status display -->
-<div id="status" style="margin-top: 10px; font-weight: bold; color: green;"></div>
+        <!-- Status display -->
+        <div id="status"></div>
 
-<!-- Connected users -->
-<h3>Connected Users:</h3>
-<div id="users" style="margin-top: 5px; color: blue;"></div>
+        <!-- Connected users -->
+        <h3>Connected Users:</h3>
+        <div id="users"></div>
+    </div>
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="script.js"></script>
-
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
