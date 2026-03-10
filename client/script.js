@@ -3,78 +3,82 @@ let localStream;
 let peerConnections = {};
 let roomId = null;
 
-// Get user media and join room
-async function joinRoom() {
+// Join room
+function joinRoom() {
     roomId = document.getElementById("room").value.trim();
-    if (!roomId) {
-        alert("Please enter a room ID");
-        return;
-    }
-
-    // Get mic audio
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-        alert("Microphone access is required!");
-        return;
-    }
+    if (!roomId) return alert("Enter room ID");
 
     socket.emit("join-room", roomId);
-
-    const statusDiv = document.getElementById("status");
-    statusDiv.textContent = `✅ Joined room: ${roomId}`;
+    document.getElementById("status").textContent = `✅ Joined room: ${roomId}`;
 }
 
-// Handle new user connection
-socket.on("user-connected", async (userId) => {
-    const pc = new RTCPeerConnection();
+// D1: Share tab audio
+async function shareAudio() {
+    if (!roomId) return alert("Join room first!");
 
-    // Add local audio tracks to peer connection
+    try {
+        // Capture audio from tab/screen
+        localStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false });
+
+        // Show local audio playing (optional)
+        const audio = document.createElement("audio");
+        audio.srcObject = localStream;
+        audio.autoplay = true;
+        audio.muted = true; // avoid feedback on D1
+        document.body.appendChild(audio);
+
+    } catch (err) {
+        console.error(err);
+        alert("Cannot capture audio. Make sure you allow tab sharing.");
+    }
+}
+
+// When a new user joins, create a peer connection and send local audio
+socket.on("user-connected", async (userId) => {
+    if (!localStream) return;
+
+    const pc = new RTCPeerConnection();
     localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
-    // Handle remote audio track
-    pc.ontrack = event => {
-        addUserAudio(userId, event.streams[0]);
-    };
-
-    // Handle ICE candidates
     pc.onicecandidate = event => {
         if (event.candidate) {
             socket.emit("signal", { to: userId, signal: event.candidate });
         }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    socket.emit("signal", { to: userId, signal: offer });
-
     peerConnections[userId] = pc;
 
-    addUserToUI(userId);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit("signal", { to: userId, signal: offer });
+
+    // Update connected users UI
+    const usersDiv = document.getElementById("users");
+    const userElem = document.createElement("div");
+    userElem.id = userId;
+    userElem.textContent = `User connected: ${userId}`;
+    usersDiv.appendChild(userElem);
 });
 
-// Handle incoming signals (offer/answer/ice)
+// Handle incoming signals
 socket.on("signal", async data => {
     let pc = peerConnections[data.from];
-    
     if (!pc) {
         pc = new RTCPeerConnection();
 
+        // When receiving remote audio
         pc.ontrack = event => {
-            addUserAudio(data.from, event.streams[0]);
+            const audio = document.createElement("audio");
+            audio.srcObject = event.streams[0];
+            audio.autoplay = true;
+            document.body.appendChild(audio);
         };
 
         pc.onicecandidate = event => {
-            if (event.candidate) {
-                socket.emit("signal", { to: data.from, signal: event.candidate });
-            }
+            if (event.candidate) socket.emit("signal", { to: data.from, signal: event.candidate });
         };
 
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
         peerConnections[data.from] = pc;
-
-        addUserToUI(data.from);
     }
 
     if (data.signal.type === "offer") {
@@ -89,66 +93,13 @@ socket.on("signal", async data => {
     }
 });
 
-// Handle user disconnect
-socket.on("user-disconnected", (id) => {
-    const elem = document.getElementById(id);
-    if (elem) elem.remove();
+// Remove disconnected users from UI and close connection
+socket.on("user-disconnected", id => {
     if (peerConnections[id]) {
         peerConnections[id].close();
         delete peerConnections[id];
     }
+
+    const userElem = document.getElementById(id);
+    if (userElem) userElem.remove();
 });
-
-// --- UI Helpers ---
-
-function addUserToUI(userId) {
-    const usersDiv = document.getElementById("users");
-    if (!document.getElementById(userId)) {
-        const userElem = document.createElement("div");
-        userElem.id = userId;
-        userElem.className = "user";
-        userElem.textContent = `User: ${userId}`;
-
-        const micIndicator = document.createElement("div");
-        micIndicator.className = "mic-indicator";
-        micIndicator.id = `mic-${userId}`;
-
-        userElem.appendChild(micIndicator);
-        usersDiv.appendChild(userElem);
-    }
-}
-
-function addUserAudio(userId, stream) {
-    let audio = document.getElementById(`audio-${userId}`);
-    if (!audio) {
-        audio = document.createElement("audio");
-        audio.id = `audio-${userId}`;
-        audio.autoplay = true;
-        audio.srcObject = stream;
-        document.body.appendChild(audio);
-
-        // Start microphone activity detection
-        detectMicActivity(stream, `mic-${userId}`);
-    }
-}
-
-// --- Microphone activity detection ---
-function detectMicActivity(stream, indicatorId) {
-    const audioCtx = new AudioContext();
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    source.connect(analyser);
-    analyser.fftSize = 512;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-    const indicator = document.getElementById(indicatorId);
-
-    function update() {
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a,b) => a+b, 0) / dataArray.length;
-        indicator.style.background = avg > 10 ? "green" : "gray";
-        requestAnimationFrame(update);
-    }
-
-    update();
-}
