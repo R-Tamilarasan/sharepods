@@ -1,142 +1,185 @@
-const socket = io();
-let localStream;
-let peerConnections = {};
-let roomId = null;
+const socket = io()
 
-// Join the room
-function joinRoom() {
-    roomId = document.getElementById("room").value.trim();
-    if (!roomId) {
-        alert("Please enter a Room ID");
-        return;
-    }
+let localStream
+let peerConnections = {}
+let roomId = null
 
-    socket.emit("join-room", roomId);
+function joinRoom(){
 
-    const statusDiv = document.getElementById("status");
-    statusDiv.textContent = `✅ Joined room: ${roomId}`;
+roomId=document.getElementById("room").value.trim()
+
+if(!roomId){
+alert("Enter room id")
+return
 }
 
-// Share device audio (D1 only)
-async function shareAudio() {
-    try {
-        // Capture system audio (tab or device)
-        localStream = await navigator.mediaDevices.getDisplayMedia({
-            audio: true,
-            video: false
-        });
+socket.emit("join-room",roomId)
 
-        // Notify all users
-        for (let track of localStream.getAudioTracks()) track.enabled = true;
+document.getElementById("status").innerText="Joined room: "+roomId
 
-        // Add localStream to all existing peer connections
-        Object.values(peerConnections).forEach(pc => {
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-        });
-
-        alert("Device audio sharing started!");
-    } catch (err) {
-        console.error("Error sharing audio:", err);
-        alert("Could not capture device audio.");
-    }
 }
 
-// When a new user joins the room
-socket.on("user-connected", async userId => {
-    const pc = new RTCPeerConnection();
+async function shareAudio(){
 
-    if (localStream) {
-        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    }
+try{
 
-    pc.onicecandidate = event => {
-        if (event.candidate) {
-            socket.emit("signal", { to: userId, signal: event.candidate });
-        }
-    };
+localStream = await navigator.mediaDevices.getDisplayMedia({
+audio:true,
+video:false
+})
 
-    pc.ontrack = event => {
-        addAudioUser(userId, event.streams[0]);
-    };
+Object.values(peerConnections).forEach(pc=>{
+localStream.getTracks().forEach(track=>{
+pc.addTrack(track,localStream)
+})
+})
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+alert("Audio sharing started")
 
-    socket.emit("signal", { to: userId, signal: offer });
+}catch(err){
 
-    peerConnections[userId] = pc;
-});
+console.error(err)
+alert("Audio capture failed")
 
-// Handle signals (offer/answer/ICE)
-socket.on("signal", async data => {
-    let pc = peerConnections[data.from];
-    if (!pc) {
-        pc = new RTCPeerConnection();
-        pc.ontrack = event => addAudioUser(data.from, event.streams[0]);
-        peerConnections[data.from] = pc;
-    }
-
-    if (data.signal.type === "offer") {
-        await pc.setRemoteDescription(data.signal);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit("signal", { to: data.from, signal: answer });
-    } else if (data.signal.type === "answer") {
-        await pc.setRemoteDescription(data.signal);
-    } else {
-        await pc.addIceCandidate(data.signal);
-    }
-});
-
-// Add audio element for a new user with controls
-function addAudioUser(userId, stream) {
-    const usersDiv = document.getElementById("users");
-
-    if (document.getElementById(`user-${userId}`)) return; // already exists
-
-    const userContainer = document.createElement("div");
-    userContainer.id = `user-${userId}`;
-    userContainer.style.marginBottom = "10px";
-
-    const label = document.createElement("span");
-    label.textContent = `User: ${userId} `;
-
-    const audio = document.createElement("audio");
-    audio.srcObject = stream;
-    audio.autoplay = true;
-    audio.controls = false;
-
-    // Volume control
-    const volumeSlider = document.createElement("input");
-    volumeSlider.type = "range";
-    volumeSlider.min = 0;
-    volumeSlider.max = 100;
-    volumeSlider.value = 100;
-    volumeSlider.oninput = () => {
-        audio.volume = volumeSlider.value / 100;
-    };
-    volumeSlider.title = "Volume";
-
-    // Mute/Unmute button
-    const muteBtn = document.createElement("button");
-    muteBtn.textContent = "Mute";
-    muteBtn.style.marginLeft = "5px";
-    muteBtn.onclick = () => {
-        audio.muted = !audio.muted;
-        muteBtn.textContent = audio.muted ? "Unmute" : "Mute";
-    };
-
-    userContainer.appendChild(label);
-    userContainer.appendChild(audio);
-    userContainer.appendChild(volumeSlider);
-    userContainer.appendChild(muteBtn);
-
-    usersDiv.appendChild(userContainer);
 }
 
-// Remove user when they disconnect
-socket.on("user-disconnected", userId => {
-    const elem = document.getElementById(`user-${userId}`);
-    if (elem) elem.remove();
-    delete peerConnections[userId];
-});
+}
+
+socket.on("user-connected",async userId=>{
+
+const pc=new RTCPeerConnection({
+iceServers:[
+{urls:"stun:stun.l.google.com:19302"}
+]
+})
+
+peerConnections[userId]=pc
+
+if(localStream){
+localStream.getTracks().forEach(track=>{
+pc.addTrack(track,localStream)
+})
+}
+
+pc.onicecandidate=e=>{
+if(e.candidate){
+socket.emit("signal",{to:userId,signal:e.candidate})
+}
+}
+
+pc.ontrack=e=>{
+addAudioUser(userId,e.streams[0])
+}
+
+const offer=await pc.createOffer()
+await pc.setLocalDescription(offer)
+
+socket.emit("signal",{to:userId,signal:offer})
+
+})
+
+socket.on("signal",async data=>{
+
+let pc=peerConnections[data.from]
+
+if(!pc){
+
+pc=new RTCPeerConnection({
+iceServers:[
+{urls:"stun:stun.l.google.com:19302"}
+]
+})
+
+peerConnections[data.from]=pc
+
+pc.ontrack=e=>{
+addAudioUser(data.from,e.streams[0])
+}
+
+pc.onicecandidate=e=>{
+if(e.candidate){
+socket.emit("signal",{to:data.from,signal:e.candidate})
+}
+}
+
+}
+
+if(data.signal.type==="offer"){
+
+await pc.setRemoteDescription(data.signal)
+
+const answer=await pc.createAnswer()
+
+await pc.setLocalDescription(answer)
+
+socket.emit("signal",{to:data.from,signal:answer})
+
+}
+
+else if(data.signal.type==="answer"){
+
+await pc.setRemoteDescription(data.signal)
+
+}
+
+else{
+
+await pc.addIceCandidate(data.signal)
+
+}
+
+})
+
+function addAudioUser(userId,stream){
+
+if(document.getElementById("user-"+userId)) return
+
+const users=document.getElementById("users")
+
+const div=document.createElement("div")
+div.className="user"
+div.id="user-"+userId
+
+const label=document.createElement("span")
+label.innerText="User "+userId+" "
+
+const audio=document.createElement("audio")
+audio.srcObject=stream
+audio.autoplay=true
+
+const volume=document.createElement("input")
+volume.type="range"
+volume.min=0
+volume.max=100
+volume.value=100
+
+volume.oninput=()=>{
+audio.volume=volume.value/100
+}
+
+const mute=document.createElement("button")
+mute.innerText="Mute"
+
+mute.onclick=()=>{
+audio.muted=!audio.muted
+mute.innerText=audio.muted?"Unmute":"Mute"
+}
+
+div.appendChild(label)
+div.appendChild(audio)
+div.appendChild(volume)
+div.appendChild(mute)
+
+users.appendChild(div)
+
+}
+
+socket.on("user-disconnected",userId=>{
+
+const el=document.getElementById("user-"+userId)
+
+if(el) el.remove()
+
+delete peerConnections[userId]
+
+})
