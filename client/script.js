@@ -1,185 +1,225 @@
 const socket = io()
 
-let localStream
+let localStream = null
 let peerConnections = {}
 let roomId = null
 
+// STUN servers for WebRTC
+const rtcConfig = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }
+  ]
+}
+
+
+// JOIN ROOM
 function joinRoom(){
 
-roomId=document.getElementById("room").value.trim()
+  roomId = document.getElementById("room").value.trim()
 
-if(!roomId){
-alert("Enter room id")
-return
+  if(!roomId){
+    alert("Enter Room ID")
+    return
+  }
+
+  socket.emit("join-room", roomId)
+
+  document.getElementById("status").innerText = "✅ Joined room: " + roomId
+
 }
 
-socket.emit("join-room",roomId)
 
-document.getElementById("status").innerText="Joined room: "+roomId
-
-}
-
+// SHARE DEVICE AUDIO (D1)
 async function shareAudio(){
 
-try{
+  try{
 
-localStream = await navigator.mediaDevices.getDisplayMedia({
-audio:true,
-video:false
-})
+    localStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true
+    })
 
-Object.values(peerConnections).forEach(pc=>{
-localStream.getTracks().forEach(track=>{
-pc.addTrack(track,localStream)
-})
-})
+    const audioTracks = localStream.getAudioTracks()
 
-alert("Audio sharing started")
+    if(audioTracks.length === 0){
+      alert("No audio detected. Make sure 'Share Tab Audio' is enabled.")
+      return
+    }
 
-}catch(err){
+    // Add audio track to existing peers
+    Object.values(peerConnections).forEach(pc => {
+      audioTracks.forEach(track=>{
+        pc.addTrack(track, localStream)
+      })
+    })
 
-console.error(err)
-alert("Audio capture failed")
+    alert("Audio sharing started!")
 
-}
+  }catch(err){
 
-}
+    console.error(err)
+    alert("Audio capture failed. Use Chrome and enable 'Share tab audio'.")
 
-socket.on("user-connected",async userId=>{
-
-const pc=new RTCPeerConnection({
-iceServers:[
-{urls:"stun:stun.l.google.com:19302"}
-]
-})
-
-peerConnections[userId]=pc
-
-if(localStream){
-localStream.getTracks().forEach(track=>{
-pc.addTrack(track,localStream)
-})
-}
-
-pc.onicecandidate=e=>{
-if(e.candidate){
-socket.emit("signal",{to:userId,signal:e.candidate})
-}
-}
-
-pc.ontrack=e=>{
-addAudioUser(userId,e.streams[0])
-}
-
-const offer=await pc.createOffer()
-await pc.setLocalDescription(offer)
-
-socket.emit("signal",{to:userId,signal:offer})
-
-})
-
-socket.on("signal",async data=>{
-
-let pc=peerConnections[data.from]
-
-if(!pc){
-
-pc=new RTCPeerConnection({
-iceServers:[
-{urls:"stun:stun.l.google.com:19302"}
-]
-})
-
-peerConnections[data.from]=pc
-
-pc.ontrack=e=>{
-addAudioUser(data.from,e.streams[0])
-}
-
-pc.onicecandidate=e=>{
-if(e.candidate){
-socket.emit("signal",{to:data.from,signal:e.candidate})
-}
-}
+  }
 
 }
 
-if(data.signal.type==="offer"){
 
-await pc.setRemoteDescription(data.signal)
+// NEW USER CONNECTED
+socket.on("user-connected", async userId => {
 
-const answer=await pc.createAnswer()
+  console.log("User connected:", userId)
 
-await pc.setLocalDescription(answer)
+  const pc = new RTCPeerConnection(rtcConfig)
 
-socket.emit("signal",{to:data.from,signal:answer})
+  peerConnections[userId] = pc
 
-}
+  // Add audio if already sharing
+  if(localStream){
+    localStream.getTracks().forEach(track=>{
+      pc.addTrack(track, localStream)
+    })
+  }
 
-else if(data.signal.type==="answer"){
+  pc.onicecandidate = event => {
+    if(event.candidate){
+      socket.emit("signal", {
+        to: userId,
+        signal: event.candidate
+      })
+    }
+  }
 
-await pc.setRemoteDescription(data.signal)
+  pc.ontrack = event => {
+    addAudioUser(userId, event.streams[0])
+  }
 
-}
+  const offer = await pc.createOffer()
+  await pc.setLocalDescription(offer)
 
-else{
-
-await pc.addIceCandidate(data.signal)
-
-}
+  socket.emit("signal", {
+    to: userId,
+    signal: offer
+  })
 
 })
 
-function addAudioUser(userId,stream){
 
-if(document.getElementById("user-"+userId)) return
+// HANDLE SIGNALS
+socket.on("signal", async data => {
 
-const users=document.getElementById("users")
+  let pc = peerConnections[data.from]
 
-const div=document.createElement("div")
-div.className="user"
-div.id="user-"+userId
+  if(!pc){
 
-const label=document.createElement("span")
-label.innerText="User "+userId+" "
+    pc = new RTCPeerConnection(rtcConfig)
 
-const audio=document.createElement("audio")
-audio.srcObject=stream
-audio.autoplay=true
+    peerConnections[data.from] = pc
 
-const volume=document.createElement("input")
-volume.type="range"
-volume.min=0
-volume.max=100
-volume.value=100
+    pc.ontrack = event => {
+      addAudioUser(data.from, event.streams[0])
+    }
 
-volume.oninput=()=>{
-audio.volume=volume.value/100
+    pc.onicecandidate = event => {
+      if(event.candidate){
+        socket.emit("signal", {
+          to: data.from,
+          signal: event.candidate
+        })
+      }
+    }
+
+  }
+
+  if(data.signal.type === "offer"){
+
+    await pc.setRemoteDescription(data.signal)
+
+    const answer = await pc.createAnswer()
+
+    await pc.setLocalDescription(answer)
+
+    socket.emit("signal", {
+      to: data.from,
+      signal: answer
+    })
+
+  }
+
+  else if(data.signal.type === "answer"){
+
+    await pc.setRemoteDescription(data.signal)
+
+  }
+
+  else{
+
+    try{
+      await pc.addIceCandidate(data.signal)
+    }catch(err){
+      console.error("ICE error:", err)
+    }
+
+  }
+
+})
+
+
+// ADD USER AUDIO UI
+function addAudioUser(userId, stream){
+
+  if(document.getElementById("user-"+userId)) return
+
+  const users = document.getElementById("users")
+
+  const div = document.createElement("div")
+  div.className = "user"
+  div.id = "user-"+userId
+
+  const label = document.createElement("span")
+  label.innerText = "User " + userId + " "
+
+  const audio = document.createElement("audio")
+  audio.srcObject = stream
+  audio.autoplay = true
+  audio.controls = false
+
+  const volume = document.createElement("input")
+  volume.type = "range"
+  volume.min = 0
+  volume.max = 100
+  volume.value = 100
+
+  volume.oninput = () => {
+    audio.volume = volume.value / 100
+  }
+
+  const mute = document.createElement("button")
+  mute.innerText = "Mute"
+
+  mute.onclick = () => {
+    audio.muted = !audio.muted
+    mute.innerText = audio.muted ? "Unmute" : "Mute"
+  }
+
+  div.appendChild(label)
+  div.appendChild(audio)
+  div.appendChild(volume)
+  div.appendChild(mute)
+
+  users.appendChild(div)
+
 }
 
-const mute=document.createElement("button")
-mute.innerText="Mute"
 
-mute.onclick=()=>{
-audio.muted=!audio.muted
-mute.innerText=audio.muted?"Unmute":"Mute"
-}
+// USER DISCONNECTED
+socket.on("user-disconnected", userId => {
 
-div.appendChild(label)
-div.appendChild(audio)
-div.appendChild(volume)
-div.appendChild(mute)
+  const el = document.getElementById("user-"+userId)
 
-users.appendChild(div)
+  if(el) el.remove()
 
-}
-
-socket.on("user-disconnected",userId=>{
-
-const el=document.getElementById("user-"+userId)
-
-if(el) el.remove()
-
-delete peerConnections[userId]
+  delete peerConnections[userId]
 
 })

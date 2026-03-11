@@ -19,7 +19,7 @@ socket.on("join-room",roomId=>{
 
 socket.join(roomId)
 
-socket.to(roomId).emit("user-connected",socket.id)
+io.to(roomId).emit("user-connected", socket.id);
 
 socket.on("signal",data=>{
 io.to(data.to).emit("signal",{
