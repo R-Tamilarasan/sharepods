@@ -2,12 +2,11 @@
   "name": "sharepods",
   "version": "1.0.0",
   "main": "server/index.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server/index.js"
   },
   "dependencies": {
-    "express": "^5.2.1",
-    "socket.io": "^4.8.3"
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
   }
 }
