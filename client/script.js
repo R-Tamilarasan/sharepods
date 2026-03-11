@@ -4,11 +4,35 @@ let localStream = null
 let peerConnections = {}
 let roomId = null
 
-// STUN servers for WebRTC
 const rtcConfig = {
   iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" }
+
+    {
+      urls: "stun:stun.l.google.com:19302"
+    },
+
+    {
+      urls: "stun:stun1.l.google.com:19302"
+    },
+
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
+
   ]
 }
 
@@ -36,23 +60,41 @@ async function shareAudio(){
   try{
 
     localStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true
+      video:true,
+      audio:true
     })
 
     const audioTracks = localStream.getAudioTracks()
 
     if(audioTracks.length === 0){
-      alert("No audio detected. Make sure 'Share Tab Audio' is enabled.")
+      alert("No audio detected. Enable 'Share tab audio'")
       return
     }
 
-    // Add audio track to existing peers
-    Object.values(peerConnections).forEach(pc => {
+    // Add tracks to existing peers
+    Object.values(peerConnections).forEach(pc=>{
       audioTracks.forEach(track=>{
-        pc.addTrack(track, localStream)
+        pc.addTrack(track,localStream)
       })
     })
+
+    // 🔵 Renegotiate so all peers receive the audio
+    for(const userId in peerConnections){
+
+      const pc = peerConnections[userId]
+
+      const offer = await pc.createOffer({
+        offerToReceiveAudio:true
+      })
+
+      await pc.setLocalDescription(offer)
+
+      socket.emit("signal",{
+        to:userId,
+        signal:offer
+      })
+
+    }
 
     alert("Audio sharing started!")
 
@@ -65,7 +107,6 @@ async function shareAudio(){
 
 }
 
-
 // NEW USER CONNECTED
 socket.on("user-connected", async userId => {
 
@@ -76,12 +117,25 @@ socket.on("user-connected", async userId => {
   peerConnections[userId] = pc
 
   // Add audio if already sharing
-  if(localStream){
-    localStream.getTracks().forEach(track=>{
-      pc.addTrack(track, localStream)
-    })
-  }
+ if(localStream){
 
+localStream.getTracks().forEach(track=>{
+pc.addTrack(track, localStream)
+})
+
+const offer = await pc.createOffer({
+  offerToReceiveAudio: true
+})
+
+await pc.setLocalDescription(offer)
+
+socket.emit("signal",{
+  to:userId,
+  signal:offer
+})
+
+return
+}
   pc.onicecandidate = event => {
     if(event.candidate){
       socket.emit("signal", {
@@ -94,14 +148,6 @@ socket.on("user-connected", async userId => {
   pc.ontrack = event => {
     addAudioUser(userId, event.streams[0])
   }
-
-  const offer = await pc.createOffer()
-  await pc.setLocalDescription(offer)
-
-  socket.emit("signal", {
-    to: userId,
-    signal: offer
-  })
 
 })
 
