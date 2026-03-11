@@ -109,63 +109,62 @@ socket.on("user-connected", async userId => {
 // HANDLE SIGNALS
 socket.on("signal", async data => {
 
-  let pc = peerConnections[data.from]
+let pc = peerConnections[data.from]
 
-  if(!pc){
+if(!pc){
 
-    pc = new RTCPeerConnection(rtcConfig)
+pc = new RTCPeerConnection(rtcConfig)
+peerConnections[data.from] = pc
 
-    peerConnections[data.from] = pc
+pc.ontrack = e=>{
+addAudioUser(data.from,e.streams[0])
+}
 
-    pc.ontrack = event => {
-      addAudioUser(data.from, event.streams[0])
-    }
+pc.onicecandidate = e=>{
+if(e.candidate){
+socket.emit("signal",{to:data.from,signal:e.candidate})
+}
+}
 
-    pc.onicecandidate = event => {
-      if(event.candidate){
-        socket.emit("signal", {
-          to: data.from,
-          signal: event.candidate
-        })
-      }
-    }
+}
 
-  }
+if(data.signal.type === "offer"){
 
-  if(data.signal.type === "offer"){
+await pc.setRemoteDescription(data.signal)
 
-    await pc.setRemoteDescription(data.signal)
+const answer = await pc.createAnswer()
+await pc.setLocalDescription(answer)
 
-    const answer = await pc.createAnswer()
+socket.emit("signal",{to:data.from,signal:answer})
 
-    await pc.setLocalDescription(answer)
+}
 
-    socket.emit("signal", {
-      to: data.from,
-      signal: answer
-    })
+else if(data.signal.type === "answer"){
 
-  }
+if(pc.signalingState !== "stable"){
+await pc.setRemoteDescription(data.signal)
+}
 
-  else if(data.signal.type === "answer"){
+}
 
-    await pc.setRemoteDescription(data.signal)
+else{
 
-  }
+try{
+await pc.addIceCandidate(data.signal)
+}catch(err){
+console.log("ICE skipped")
+}
 
-  else{
-
-    try{
-      await pc.addIceCandidate(data.signal)
-    }catch(err){
-      console.error("ICE error:", err)
-    }
-
-  }
+}
 
 })
 
-
+function enableAudio(){
+    const audios = document.querySelectorAll("audio")
+    audios.forEach(a=>{
+        a.play().catch(()=>{})
+    })
+}
 // ADD USER AUDIO UI
 function addAudioUser(userId, stream){
 
@@ -182,7 +181,14 @@ function addAudioUser(userId, stream){
 
   const audio = document.createElement("audio")
   audio.srcObject = stream
-  audio.autoplay = true
+ audio.autoplay = true
+audio.playsInline = true
+
+audio.onloadedmetadata = () => {
+    audio.play().catch(() => {
+        console.log("User interaction required to start audio")
+    })
+}
   audio.controls = false
 
   const volume = document.createElement("input")
